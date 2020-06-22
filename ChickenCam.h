@@ -1,6 +1,7 @@
 #pragma once
 #include <gst/gst.h>
 #include <vector>
+#include <string>
 
 struct CamSlot
 {
@@ -22,11 +23,20 @@ public:
 private:
     /* Private methods */
     void initGst();
+    GstElement* createGstElement(char* factory, char* name);
 
     /* Private members */
     std::vector<CamSlot> camSlots;
+    std::string mixerStreamKey;
     // GStreamer
-    GstElement* gstPipeline;
-    GstElement* gstNvCompositor;
+    GstBus* gstBus;
     std::vector<GstElement*> gstCamSrcElements;
+    GstElement* gstNvCompositor;
+    GstElement* gstNvVidConv;
+    GstElement* gstNvH264Enc;
+    GstElement* gstVideoQueue;
+    GstElement* gstAudioTestSrc;
+    GstElement* gstOpusEnc;
+    GstElement* gstFtlSink;
+    GstElement* gstPipeline;
 };

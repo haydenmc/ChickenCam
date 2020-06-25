@@ -6,10 +6,29 @@ ChickenCam::ChickenCam()
 {
     // Hard coding these for now:
     //                        X     Y     W     H
-    this->camSlots.push_back({480,  0,    960,  720});
-    this->camSlots.push_back({0,    0,    480,  360});
-    this->camSlots.push_back({0,    360,  480,  360});
-    this->mixerStreamKey = std::string("1081292-YgHqpurV88ogoN0Rasrj6jvlfRGwszhJ");
+    this->camSlots.push_back({
+        480, // X
+        0,   // Y
+        960, // W
+        720, // H
+        std::string("rtsp://170.93.143.139/rtplive/470011e600ef003a004ee33696235daa")
+    });
+    this->camSlots.push_back({
+        0,   // X
+        0,   // Y
+        480, // W
+        360, // H
+        std::string("rtsp://170.93.143.139/rtplive/470011e600ef003a004ee33696235daa")
+    });
+    this->camSlots.push_back({
+        0,   // X
+        360, // Y
+        480, // W
+        360, // H
+        std::string("rtsp://170.93.143.139/rtplive/470011e600ef003a004ee33696235daa")
+    });
+    this->twitchIngestUri = std::string("rtmp://live-sea.twitch.tv/app/");
+    this->twitchStreamKey = std::string("");
     this->initGst();
 }
 #pragma endregion
@@ -17,9 +36,10 @@ ChickenCam::ChickenCam()
 #pragma region Public methods
 void ChickenCam::Run()
 {
-    while (true)
-    {
+    //while (true)
+    //{
         // Play!
+        std::cout << "CHICKENCAM: PLAY" << std::endl;
         GstStateChangeReturn ret = gst_element_set_state (this->gstPipeline, GST_STATE_PLAYING);
         if (ret == GST_STATE_CHANGE_FAILURE) {
             gst_object_unref (this->gstPipeline);
@@ -56,6 +76,7 @@ void ChickenCam::Run()
                     g_clear_error (&err);
                     g_free (debug_info);
                     terminate = TRUE;
+                    gst_debug_bin_to_dot_file_with_ts(GST_BIN(this->gstPipeline), GST_DEBUG_GRAPH_SHOW_ALL, "error");
                     break;
                 case GST_MESSAGE_EOS:
                     std::cout << "CHICKENCAM: End-Of-Stream reached." << std::endl;
@@ -69,9 +90,9 @@ void ChickenCam::Run()
                         GstState pending_state;
                         gst_message_parse_state_changed (msg, &old_state, &new_state, &pending_state);
                         std::cout << "CHICKENCAM: Pipeline state changed from " << 
-                            gst_element_state_get_name(old_state) << 
+                            gst_element_state_get_name(old_state) << " (" << old_state << ")" <<
                             " to " << 
-                            gst_element_state_get_name(new_state) << 
+                            gst_element_state_get_name(new_state) << " (" << new_state << ")" <<
                             std::endl;
                     }
                     break;
@@ -84,8 +105,28 @@ void ChickenCam::Run()
         }
         while (!terminate);
 
+        gst_debug_bin_to_dot_file_with_ts(GST_BIN(this->gstPipeline), GST_DEBUG_GRAPH_SHOW_ALL, "terminated");
+
         std::cout << "CHICKENCAM: Terminated." << std::endl;
+    //}
+}
+#pragma endregion
+
+#pragma region Private static methods
+void ChickenCam::onRtspPadAdded(GstElement* element, GstPad* pad, void* data)
+{
+    std::cout << "CHICKENCAM: Linking rtspsrc..." << std::endl;
+    // Finish linking rtspsrc
+    GstElement* rtpH264Depay = GST_ELEMENT(data);
+    GstPad* sinkpad;
+
+    sinkpad = gst_element_get_static_pad(rtpH264Depay, "sink");
+    GstPadLinkReturn linkResult = gst_pad_link(pad, sinkpad);
+    if (linkResult != GST_PAD_LINK_OK)
+    {
+        throw std::runtime_error(std::string("Could not link rtspsrc: ") + std::to_string(linkResult));
     }
+    gst_object_unref(sinkpad);
 }
 #pragma endregion
 
@@ -100,20 +141,20 @@ void ChickenCam::initGst()
     this->gstNvCompositor = gst_element_factory_make("nvcompositor",  "compositor");
     this->gstNvVidConv    = gst_element_factory_make("nvvidconv",     "converter");
     this->gstNvH264Enc    = gst_element_factory_make("nvv4l2h264enc", "encoder");
+    this->gstH264Parse    = gst_element_factory_make("h264parse",     "h264parse");
+    this->gstFlvMux       = gst_element_factory_make("flvmux",        "flvmux");
     this->gstVideoQueue   = gst_element_factory_make("queue",         "videoqueue");
-    this->gstAudioTestSrc = gst_element_factory_make("audiotestsrc",  "audiotestsrc");
-    this->gstOpusEnc      = gst_element_factory_make("opusenc",       "opusenc");
-    this->gstFtlSink      = gst_element_factory_make("ftlsink",       "ftl");
+    this->gstRtmpSink     = gst_element_factory_make("rtmpsink",      "rtmpsink");
 
     std::cout << "CHICKENCAM: Adding elements to pipeline..." << std::endl;
     gst_bin_add_many (GST_BIN(this->gstPipeline),
         this->gstNvCompositor,
         this->gstNvVidConv,
         this->gstNvH264Enc,
+        this->gstH264Parse,
+        this->gstFlvMux,
         this->gstVideoQueue,
-        this->gstAudioTestSrc,
-        this->gstOpusEnc,
-        this->gstFtlSink,
+        this->gstRtmpSink,
         NULL);
 
     std::cout << "CHICKENCAM: Configuring Compositor element..." << std::endl;
@@ -125,6 +166,31 @@ void ChickenCam::initGst()
             slot.X << ", " << slot.Y << ", " << slot.Width << ", " << slot.Height <<
             ")" << std::endl;
 
+        // Create a cam source
+        std::shared_ptr<CamSource> camSource = std::make_shared<CamSource>(slot.uri);
+        this->camSources.push_back(camSource);
+
+        // Add cam source bin to our pipeline
+        GstBin* camSourceBin = camSource->GetBin();
+        gst_bin_add(GST_BIN(this->gstPipeline), GST_ELEMENT(camSourceBin));
+
+        // Add a caps filter with the slot size parameters
+        GstElement* capsFilter = gst_element_factory_make("capsfilter", NULL);
+        gst_bin_add(GST_BIN(this->gstPipeline), capsFilter);
+        GstCaps* caps = gst_caps_new_simple("video/x-raw",
+            "format", G_TYPE_STRING, "RGBA",
+            //"framerate", GST_TYPE_FRACTION, 30, 1,
+            "width", G_TYPE_INT, slot.Width,
+            "height", G_TYPE_INT, slot.Height,
+            NULL);
+        g_object_set(capsFilter,
+            "caps", caps,
+            NULL);
+        gst_caps_unref(caps);
+
+        // Link cam source bin to caps filter
+        gst_element_link_pads(GST_ELEMENT(camSourceBin), "src", capsFilter, "sink");
+
         // Create sink pad on compositor for this cam slot
         GstPadTemplate* compositorSinkPadTemplate = 
             gst_element_class_get_pad_template(
@@ -135,6 +201,7 @@ void ChickenCam::initGst()
                 compositorSinkPadTemplate,
                 NULL,
                 NULL);
+        gst_object_unref(GST_OBJECT(compositorSinkPadTemplate));
 
         // Set properties on sink pad
         g_object_set(compositorSinkPad,
@@ -144,40 +211,14 @@ void ChickenCam::initGst()
             "height", slot.Height,
             NULL);
 
-        // For now, create a test source and hook it up to this sink pad
-        GstElement* slotElement = gst_element_factory_make("videotestsrc", NULL);
-        GstElement* slotCapsFilter = gst_element_factory_make("capsfilter", NULL);
-        GstElement* slotNvVidConv = gst_element_factory_make("nvvidconv", NULL);
+        // Link the cam source bin to the compositor
+        GstPad* capsFilterSourcePad = gst_element_get_static_pad(capsFilter, "src");
+        GstPadLinkReturn padLinkResult = gst_pad_link(capsFilterSourcePad, compositorSinkPad);
 
-        // Configure
-        g_object_set(slotElement,
-            "is-live", 1,
-            NULL);
+        // unref everything
+        gst_object_unref(GST_OBJECT(compositorSinkPad));
+        gst_object_unref(GST_OBJECT(capsFilterSourcePad));
 
-        GstCaps *caps = gst_caps_new_simple ("video/x-raw",
-            "format", G_TYPE_STRING, "I420",
-            "framerate", GST_TYPE_FRACTION, 30, 1,
-            "width", G_TYPE_INT, slot.Width,
-            "height", G_TYPE_INT, slot.Height,
-            NULL);
-        g_object_set(slotCapsFilter,
-            "caps", caps,
-            NULL);
-        gst_caps_unref(caps);
-
-        gst_bin_add(GST_BIN(this->gstPipeline), slotElement);
-        gst_bin_add(GST_BIN(this->gstPipeline), slotCapsFilter);
-        gst_bin_add(GST_BIN(this->gstPipeline), slotNvVidConv);
-        if (!gst_element_link_many(
-            slotElement,
-            slotCapsFilter,
-            slotNvVidConv,
-            NULL))
-        {
-            throw std::runtime_error("Could not link cam source.");
-        }
-        GstPad* srcPad = gst_element_get_static_pad(slotNvVidConv, "src");
-        GstPadLinkReturn padLinkResult = gst_pad_link(srcPad, compositorSinkPad);
         if (padLinkResult != GST_PAD_LINK_OK)
         {
             throw std::runtime_error(std::string("Could not link src pad to compositor sink pad: ") + std::to_string(padLinkResult));
@@ -197,38 +238,31 @@ void ChickenCam::initGst()
         "bitrate", 2000000,
         NULL);
 
-    std::cout << "CHICKENCAM: Configuring FTL element..." << std::endl;
-    g_object_set(this->gstFtlSink,
-        "stream-key", this->mixerStreamKey.c_str(),
-        NULL);
-
-    std::cout << "CHICKENCAM: Configuring audio test src element..." << std::endl;
-    g_object_set(this->gstAudioTestSrc,
-        "wave", 4, // silence
+    std::cout << "CHICKENCAM: Configuring RTMP element..." << std::endl;
+    std::string rtmpLocation = this->twitchIngestUri + this->twitchStreamKey;
+    g_object_set(this->gstRtmpSink,
+        "location", rtmpLocation.c_str(),
         NULL);
 
     // Link up video
-    std::cout << "GST: Linking video elements..." << std::endl;
+    std::cout << "CHICKENCAM: Linking video elements..." << std::endl;
     bool linkResult = gst_element_link_many(
         this->gstNvCompositor,
         this->gstNvVidConv,
         this->gstNvH264Enc,
+        this->gstH264Parse,
+        this->gstFlvMux,
         this->gstVideoQueue,
+        this->gstRtmpSink,
         NULL);
-    linkResult &= gst_element_link_pads(this->gstVideoQueue, "src", this->gstFtlSink, "videosink");
-
-    // Link up audio
-    linkResult &= gst_element_link_many(
-        this->gstAudioTestSrc,
-        this->gstOpusEnc,
-        NULL);
-    linkResult &= gst_element_link_pads(this->gstOpusEnc, "src", this->gstFtlSink, "audiosink");
 
     if (!linkResult)
     {
         gst_object_unref (this->gstPipeline);
         throw std::runtime_error("Could not link gstreamer elements!");
     }
+
+    gst_debug_bin_to_dot_file(GST_BIN(this->gstPipeline), GST_DEBUG_GRAPH_SHOW_ALL, "debug");
 }
 
 GstElement* ChickenCam::createGstElement(char* factory, char* name)

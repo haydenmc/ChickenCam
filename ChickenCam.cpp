@@ -13,22 +13,22 @@ ChickenCam::ChickenCam()
         720, // H
         std::string("rtsp://170.93.143.139/rtplive/470011e600ef003a004ee33696235daa")
     });
-    this->camSlots.push_back({
-        0,   // X
-        0,   // Y
-        480, // W
-        360, // H
-        std::string("rtsp://170.93.143.139/rtplive/470011e600ef003a004ee33696235daa")
-    });
-    this->camSlots.push_back({
-        0,   // X
-        360, // Y
-        480, // W
-        360, // H
-        std::string("rtsp://170.93.143.139/rtplive/470011e600ef003a004ee33696235daa")
-    });
+    // this->camSlots.push_back({
+    //     0,   // X
+    //     0,   // Y
+    //     480, // W
+    //     360, // H
+    //     std::string("rtsp://170.93.143.139/rtplive/470011e600ef003a004ee33696235daa")
+    // });
+    // this->camSlots.push_back({
+    //     0,   // X
+    //     360, // Y
+    //     480, // W
+    //     360, // H
+    //     std::string("rtsp://170.93.143.139/rtplive/470011e600ef003a004ee33696235daa")
+    // });
     this->twitchIngestUri = std::string("rtmp://live-sea.twitch.tv/app/");
-    this->twitchStreamKey = std::string("");
+    this->twitchStreamKey = std::string("live_547470437_uQu0uSFfqiGjCX0Q2tMOkM1ceC9Wqx");
     this->initGst();
 }
 #pragma endregion
@@ -178,8 +178,8 @@ void ChickenCam::initGst()
         GstElement* capsFilter = gst_element_factory_make("capsfilter", NULL);
         gst_bin_add(GST_BIN(this->gstPipeline), capsFilter);
         GstCaps* caps = gst_caps_new_simple("video/x-raw",
-            "format", G_TYPE_STRING, "RGBA",
-            //"framerate", GST_TYPE_FRACTION, 30, 1,
+            "format", G_TYPE_STRING, "NV12",
+            "framerate", GST_TYPE_FRACTION, 30, 1,
             "width", G_TYPE_INT, slot.Width,
             "height", G_TYPE_INT, slot.Height,
             NULL);
@@ -190,6 +190,11 @@ void ChickenCam::initGst()
 
         // Link cam source bin to caps filter
         gst_element_link_pads(GST_ELEMENT(camSourceBin), "src", capsFilter, "sink");
+
+        // Add an nv video converter
+        GstElement* nvVidConv = gst_element_factory_make("nvvidconv", NULL);
+        gst_bin_add(GST_BIN(this->gstPipeline), nvVidConv);
+        gst_element_link_pads(capsFilter, "src", nvVidConv, "sink");
 
         // Create sink pad on compositor for this cam slot
         GstPadTemplate* compositorSinkPadTemplate = 
@@ -212,12 +217,12 @@ void ChickenCam::initGst()
             NULL);
 
         // Link the cam source bin to the compositor
-        GstPad* capsFilterSourcePad = gst_element_get_static_pad(capsFilter, "src");
-        GstPadLinkReturn padLinkResult = gst_pad_link(capsFilterSourcePad, compositorSinkPad);
+        GstPad* nvVidConvSourcePad = gst_element_get_static_pad(nvVidConv, "src");
+        GstPadLinkReturn padLinkResult = gst_pad_link(nvVidConvSourcePad, compositorSinkPad);
 
         // unref everything
         gst_object_unref(GST_OBJECT(compositorSinkPad));
-        gst_object_unref(GST_OBJECT(capsFilterSourcePad));
+        gst_object_unref(GST_OBJECT(nvVidConvSourcePad));
 
         if (padLinkResult != GST_PAD_LINK_OK)
         {

@@ -1,2 +1,4 @@
 ChickenCam
 *.o
+*.log
+dot/

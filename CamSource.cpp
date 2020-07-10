@@ -1,4 +1,5 @@
 #include "CamSource.h"
+#include "ChickenCam.h"
 #include <stdexcept>
 #include <iostream>
 
@@ -37,12 +38,30 @@ void CamSource::init()
         NULL);
     this->gstRtpH264Depay = gst_element_factory_make("rtph264depay", NULL);
     GstElement* h264Parse = gst_element_factory_make("h264parse", NULL);
-    GstElement* h264Decode = gst_element_factory_make("nvv4l2decoder", NULL);
+    GstElement* h264Decode = gst_element_factory_make("omxh264dec", NULL);
+    //GstElement* h264Decode = gst_element_factory_make("avdec_h264", NULL);
+    GstElement* nvVideoConvert = gst_element_factory_make("nvvidconv", NULL);
+    //GstElement* videoConvert = gst_element_factory_make("videoconvert", NULL);
+
+    // Add a caps filter with the slot size parameters
+    GstElement* capsFilter = gst_element_factory_make("capsfilter", NULL);
+    GstCaps* caps = gst_caps_new_simple("video/x-raw",
+        "format", G_TYPE_STRING, "NV12",
+        "framerate", GST_TYPE_FRACTION, 30, 1,
+        "width", G_TYPE_INT, 960,
+        "height", G_TYPE_INT, 720,
+        NULL);
+    g_object_set(capsFilter,
+        "caps", caps,
+        NULL);
+    gst_caps_unref(caps);
 
     // Create our input selector
     this->gstInputSelector = gst_element_factory_make("input-selector", NULL);
     g_object_set(this->gstInputSelector,
-        "sync-streams", 0,
+        //"sync-streams", 0,
+        "sync-mode", 1,
+        "cache-buffers", 1,
         NULL);
 
     // Add elements to bin
@@ -52,6 +71,8 @@ void CamSource::init()
         this->gstRtpH264Depay,
         h264Parse,
         h264Decode,
+        //videoConvert,
+        capsFilter,
         this->gstInputSelector,
         NULL);
 
@@ -79,6 +100,8 @@ void CamSource::init()
         this->gstRtpH264Depay,
         h264Parse,
         h264Decode,
+        //videoConvert,
+        capsFilter,
         NULL))
     {
         throw std::runtime_error("Could not link rtp decoder elements");
@@ -91,12 +114,12 @@ void CamSource::init()
             inputSelectorSinkPadTemplate,
             NULL,
             NULL);
-    GstPad* decoderSrcPad = gst_element_get_static_pad(h264Decode, "src");
-    if (gst_pad_link(decoderSrcPad, this->gstInputSelectorRtspSink) != GST_PAD_LINK_OK)
+    GstPad* capsFilterSrcPad = gst_element_get_static_pad(capsFilter, "src");
+    if (gst_pad_link(capsFilterSrcPad, this->gstInputSelectorRtspSink) != GST_PAD_LINK_OK)
     {
         throw std::runtime_error("Could not link rtsp source to input selector");
     }
-    gst_object_unref(GST_OBJECT(decoderSrcPad));
+    gst_object_unref(GST_OBJECT(capsFilterSrcPad));
     gst_object_unref(GST_OBJECT(inputSelectorSinkPadTemplate));
 
     // Listen for pads added for the rtspsrc
@@ -130,8 +153,9 @@ void CamSource::onRtspPadAdded(GstElement* src, GstPad* pad)
          "active-pad", this->gstInputSelectorRtspSink,
          NULL);
 
+    ChickenCam::Instance->DumpPipelineDebug("rtspadded");
+
     std::cout << "CAMSOURCE: RTSP pad added" << std::endl;
 
-    gst_debug_bin_to_dot_file_with_ts(GST_BIN(this->gstBin), GST_DEBUG_GRAPH_SHOW_ALL, "rtspadded");
 }
 #pragma endregion

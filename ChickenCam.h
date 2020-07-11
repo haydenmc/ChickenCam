@@ -1,5 +1,7 @@
 #pragma once
 #include "VideoSlot.h"
+#include "LiveVideoSource.h"
+#include "Config.h"
 #include <gst/gst.h>
 #include <vector>
 #include <string>
@@ -20,18 +22,16 @@ public:
     static ChickenCam* Instance;
 
 private:
-    /* Private static methods */
-    //static void onRtspPadAdded(GstElement* element, GstPad* pad, void* data);
-
     /* Private methods */
+    void initVideoSlots();
+    void initLiveVideoSources();
     void initGst();
-    GstElement* createGstElement(char* factory, char* name);
 
     /* Private members */
     unsigned int frameRate = 30;
     std::vector<std::shared_ptr<VideoSlot>> videoSlots;
-    std::string twitchIngestUri;
-    std::string twitchStreamKey;
+    std::vector<std::shared_ptr<LiveVideoSource>> liveVideoSources;
+    std::unique_ptr<Config> config;
 
     /* GStreamer */
     GstBus* gstBus;

@@ -13,16 +13,19 @@ VideoSlot::VideoSlot(
     unsigned int x,
     unsigned int y,
     unsigned int width,
-    unsigned int height) : 
+    unsigned int height,
+    unsigned int frameRate) : 
     id(id),
     x(x),
     y(y),
     width(width),
-    height(height)
+    height(height),
+    frameRate(frameRate)
 {
     std::stringstream createdLogMessageStream;
     createdLogMessageStream << "Created with bounds " <<
-        "(" << x << ", " << y << ", " << width << ", " << height << ")";
+        "(" << x << ", " << y << ", " << width << ", " << height << ") "
+        "@ " << frameRate << " FPS";
     Logger::LogInfo(this, createdLogMessageStream.str());
 }
 #pragma endregion
@@ -118,6 +121,8 @@ void VideoSlot::Init()
 
 void VideoSlot::AttachVideoSource(std::shared_ptr<LiveVideoSource> liveVideoSource)
 {
+    Logger::LogInfo(this, "Attaching live video source...");
+    
     this->liveVideoSource = liveVideoSource;
 
     // Add the live video source bin to our bin
@@ -131,11 +136,12 @@ void VideoSlot::AttachVideoSource(std::shared_ptr<LiveVideoSource> liveVideoSour
 
         // Set up a filter to make sure we get a consistent format
         GstElement* videoConvert = gst_element_factory_make("videoconvert", NULL);
+        GstElement* videoScale = gst_element_factory_make("videoscale", NULL);
         GstElement* videoRate = gst_element_factory_make("videorate", NULL);
         GstElement* capsFilter = gst_element_factory_make("capsfilter", NULL);
         GstCaps* caps = gst_caps_new_simple("video/x-raw",
             "format", G_TYPE_STRING, "NV12",
-            "framerate", GST_TYPE_FRACTION, 30, 1,
+            "framerate", GST_TYPE_FRACTION, this->frameRate, 1,
             "width", G_TYPE_INT, this->width,
             "height", G_TYPE_INT, this->height,
             NULL);
@@ -146,6 +152,7 @@ void VideoSlot::AttachVideoSource(std::shared_ptr<LiveVideoSource> liveVideoSour
 
         gst_bin_add_many (GST_BIN(this->gstBin),
             videoConvert,
+            videoScale,
             videoRate,
             capsFilter,
             NULL);
@@ -153,6 +160,7 @@ void VideoSlot::AttachVideoSource(std::shared_ptr<LiveVideoSource> liveVideoSour
         if (!gst_element_link_many(
             GST_ELEMENT(this->liveVideoSource->GetGstBin()),
             videoConvert,
+            videoScale,
             videoRate,
             capsFilter,
             NULL))
@@ -181,6 +189,7 @@ void VideoSlot::AttachVideoSource(std::shared_ptr<LiveVideoSource> liveVideoSour
 
         // Set states on new elements
         gst_element_sync_state_with_parent(videoConvert);
+        gst_element_sync_state_with_parent(videoScale);
         gst_element_sync_state_with_parent(videoRate);
         gst_element_sync_state_with_parent(capsFilter);
 

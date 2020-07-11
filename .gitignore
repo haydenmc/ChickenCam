@@ -2,3 +2,4 @@ ChickenCam
 *.o
 *.log
 dot/
+config.xml

@@ -18,7 +18,8 @@ public:
         unsigned int x,
         unsigned int y,
         unsigned int width,
-        unsigned int height);
+        unsigned int height,
+        unsigned int frameRate);
 
     /* Public methods */
     unsigned int GetId();
@@ -39,6 +40,7 @@ private:
     unsigned int y;
     unsigned int width;
     unsigned int height;
+    unsigned int frameRate;
 
     // Connected sources
     std::shared_ptr<LiveVideoSource> liveVideoSource;

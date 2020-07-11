@@ -1,7 +1,8 @@
 #include "ChickenCam.h"
-#include "LiveVideoSource.h"
 #include "Logger.h"
 #include <iostream>
+#include <memory>
+#include <sstream>
 
 ChickenCam* ChickenCam::Instance = nullptr;
 
@@ -9,8 +10,7 @@ ChickenCam* ChickenCam::Instance = nullptr;
 ChickenCam::ChickenCam()
 {
     ChickenCam::Instance = this;
-    this->twitchIngestUri = std::string("rtmp://live-sea.twitch.tv/app/");
-    this->twitchStreamKey = std::string("");
+    this->config = std::make_unique<Config>();
 }
 #pragma endregion
 
@@ -18,50 +18,13 @@ ChickenCam::ChickenCam()
 void ChickenCam::Init()
 {
     Logger::LogInfo(this, "Initializing...");
+    this->config->Load();
+
     Logger::LogInfo(this, "gst_init");
     gst_init(NULL, NULL);
 
-    // Hard code some video slots
-    std::shared_ptr<VideoSlot> videoSlot = 
-        std::make_shared<VideoSlot>(
-            0,   // ID
-            480, // X
-            0,   // Y
-            960, // W
-            720  // H
-        );
-    this->videoSlots.push_back(videoSlot);
-    videoSlot->Init();
-
-    videoSlot = 
-        std::make_shared<VideoSlot>(
-            1,   // ID
-            0,   // X
-            0,   // Y
-            480, // W
-            360  // H
-        );
-    this->videoSlots.push_back(videoSlot);
-    videoSlot->Init();
-
-    videoSlot = 
-        std::make_shared<VideoSlot>(
-            2,   // ID
-            0,   // X
-            360, // Y
-            480, // W
-            360  // H
-        );
-    this->videoSlots.push_back(videoSlot);
-    videoSlot->Init();
-
-    // Hook up a test stream to the first slot
-    std::shared_ptr<LiveVideoSource> liveVideoSource = 
-        std::make_shared<LiveVideoSource>("rtsp://127.0.0.1:8554/test");
-    liveVideoSource->Init();
-    this->videoSlots.at(0)->AttachVideoSource(liveVideoSource);
-
-    // Initialize ChickenCam gstreamer pipeline
+    this->initVideoSlots();
+    this->initLiveVideoSources();
     this->initGst();
 }
 
@@ -152,25 +115,59 @@ void ChickenCam::DumpPipelineDebug(const char* name)
 }
 #pragma endregion
 
-#pragma region Private static methods
-// void ChickenCam::onRtspPadAdded(GstElement* element, GstPad* pad, void* data)
-// {
-//     std::cout << "CHICKENCAM: Linking rtspsrc..." << std::endl;
-//     // Finish linking rtspsrc
-//     GstElement* rtpH264Depay = GST_ELEMENT(data);
-//     GstPad* sinkpad;
-
-//     sinkpad = gst_element_get_static_pad(rtpH264Depay, "sink");
-//     GstPadLinkReturn linkResult = gst_pad_link(pad, sinkpad);
-//     if (linkResult != GST_PAD_LINK_OK)
-//     {
-//         throw std::runtime_error(std::string("Could not link rtspsrc: ") + std::to_string(linkResult));
-//     }
-//     gst_object_unref(sinkpad);
-// }
-#pragma endregion
-
 #pragma region Private methods
+void ChickenCam::initVideoSlots()
+{
+    Logger::LogInfo(this, "Populating video slots from config...");
+    std::vector<ConfigVideoSlot> configSlots = config->GetVideoSlots();
+    for (const ConfigVideoSlot& configSlot : configSlots)
+    {
+        std::shared_ptr<VideoSlot> slot = std::make_shared<VideoSlot>(
+            configSlot.id,
+            configSlot.x,
+            configSlot.y,
+            configSlot.width,
+            configSlot.height,
+            this->frameRate
+        );
+        this->videoSlots.push_back(slot);
+        slot->Init();
+    }
+}
+
+void ChickenCam::initLiveVideoSources()
+{
+    Logger::LogInfo(this, "Populating live video sources from config...");
+    std::vector<ConfigLiveVideoSource> configSources = config->GetLiveVideoSources();
+    for (const ConfigLiveVideoSource& configSource : configSources)
+    {
+        std::shared_ptr<LiveVideoSource> source = std::make_shared<LiveVideoSource>(
+            configSource.rtspUri
+        );
+        this->liveVideoSources.push_back(source);
+        source->Init();
+
+        // Attach to the slot with the given ID
+        bool found = false;
+        for (const std::shared_ptr<VideoSlot>& slot : this->videoSlots)
+        {
+            if (slot->GetId() == configSource.slotId)
+            {
+                found = true;
+                slot->AttachVideoSource(source);
+                break;
+            }
+        }
+        if (!found)
+        {
+            std::stringstream logMessage;
+            logMessage << "Could not link live video source to requested slot " << 
+                configSource.slotId;
+            Logger::LogError(this, logMessage.str());
+        }
+    }
+}
+
 void ChickenCam::initGst()
 {
     Logger::LogInfo(this, "Initializing GStreamer pipeline...");
@@ -277,9 +274,8 @@ void ChickenCam::initGst()
         NULL);
 
     Logger::LogInfo(this, "Configuring RTMP element...");
-    std::string rtmpLocation = this->twitchIngestUri + this->twitchStreamKey;
     g_object_set(this->gstRtmpSink,
-        "location", rtmpLocation.c_str(),
+        "location", this->config->GetChickenCam().rtmpTargetUri.c_str(),
         NULL);
 
     // Link up video
@@ -301,14 +297,5 @@ void ChickenCam::initGst()
     }
 
     gst_debug_bin_to_dot_file(GST_BIN(this->gstPipeline), GST_DEBUG_GRAPH_SHOW_ALL, "debug");
-}
-
-GstElement* ChickenCam::createGstElement(char* factory, char* name)
-{
-    GstElement* element = gst_element_factory_make(factory, name);
-    if (!element)
-    {
-        throw std::runtime_error("Could not create GStreamer element " + std::string(name));
-    }
 }
 #pragma endregion

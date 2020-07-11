@@ -4,7 +4,9 @@
 #pragma region Constructor/Destructor
 LiveVideoSource::LiveVideoSource(std::string rtspUrl) : 
     rtspUrl(rtspUrl)
-{ }
+{
+    Logger::LogInfo(this, "Created, URI: " + rtspUrl);
+}
 #pragma endregion
 
 #pragma region Public methods
@@ -62,21 +64,22 @@ void LiveVideoSource::onRtspPadAdded(GstElement* src, GstPad* pad)
     GstElement* queue = gst_element_factory_make("queue", NULL);
     GstElement* rtpH264Depay = gst_element_factory_make("rtph264depay", NULL);
     GstElement* h264Parse = gst_element_factory_make("h264parse", NULL);
-    //GstElement* h264Decode = gst_element_factory_make("omxh264dec", NULL);
-    GstElement* h264Decode = gst_element_factory_make("avdec_h264", NULL);
-    //GstElement* nvVideoConvert = gst_element_factory_make("nvvidconv", NULL);
-    // GstElement* capsFilter = gst_element_factory_make("capsfilter", NULL);
+    GstElement* h264Decode = gst_element_factory_make("nvv4l2decoder", NULL);
+    //GstElement* h264Decode = gst_element_factory_make("avdec_h264", NULL);
+    GstElement* nvVideoConvert = gst_element_factory_make("nvvidconv", NULL);
+    GstElement* capsFilter = gst_element_factory_make("capsfilter", NULL);
+    GstCaps* caps = gst_caps_new_empty_simple("video/x-raw");
     // GstCaps* caps = gst_caps_new_simple("video/x-raw",
-    //     "format", G_TYPE_STRING, "NV12",
-    //     "framerate", GST_TYPE_FRACTION, 30, 1,
+    //     // "format", G_TYPE_STRING, "NV12",
+    //     // "framerate", GST_TYPE_FRACTION, 30, 1,
     //     // "width", G_TYPE_INT, 960,
     //     // "height", G_TYPE_INT, 720,
     //     NULL);
-    // g_object_set(capsFilter,
-    //     "caps", caps,
-    //     NULL);
-    // gst_caps_unref(caps);
-    // GstElement* nvVideoConvert = gst_element_factory_make("videoconvert", NULL);
+    g_object_set(capsFilter,
+        "caps", caps,
+        NULL);
+    gst_caps_unref(caps);
+    //GstElement* videoConvert = gst_element_factory_make("videoconvert", NULL);
 
     
     gst_bin_add_many (GST_BIN(this->gstBin),
@@ -84,8 +87,9 @@ void LiveVideoSource::onRtspPadAdded(GstElement* src, GstPad* pad)
         rtpH264Depay,
         h264Parse,
         h264Decode,
-        // capsFilter,
-        // nvVideoConvert,
+        nvVideoConvert,
+        // videoConvert,
+        capsFilter,
         NULL);
     if (!gst_element_link_many(
         src,
@@ -93,15 +97,16 @@ void LiveVideoSource::onRtspPadAdded(GstElement* src, GstPad* pad)
         rtpH264Depay,
         h264Parse,
         h264Decode,
-        // capsFilter,
-        // nvVideoConvert,
+        nvVideoConvert,
+        // videoConvert,
+        capsFilter,
         NULL))
     {
         throw std::runtime_error("Could not link RTSP decoding elements");
     }
 
     // Set up ghost src pad
-    GstPad* lastSrcPad = gst_element_get_static_pad(h264Decode, "src");
+    GstPad* lastSrcPad = gst_element_get_static_pad(capsFilter, "src");
     if (!gst_ghost_pad_set_target(GST_GHOST_PAD_CAST(this->gstBinGhostSrcPad), lastSrcPad))
     {
         throw std::runtime_error("Could not update LiveVideoSource ghost source pad to point to "
@@ -113,8 +118,9 @@ void LiveVideoSource::onRtspPadAdded(GstElement* src, GstPad* pad)
     gst_element_sync_state_with_parent(rtpH264Depay);
     gst_element_sync_state_with_parent(h264Parse);
     gst_element_sync_state_with_parent(h264Decode);
-    // gst_element_sync_state_with_parent(capsFilter);
-    // gst_element_sync_state_with_parent(nvVideoConvert);
+    gst_element_sync_state_with_parent(nvVideoConvert);
+    // gst_element_sync_state_with_parent(videoConvert);
+    gst_element_sync_state_with_parent(capsFilter);
 
     this->startedEvent.Fire();
 

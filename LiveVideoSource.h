@@ -29,9 +29,14 @@ private:
     {
         reinterpret_cast<LiveVideoSource*>(data)->onRtspPadAdded(src, pad);
     }
+    static void onDecodeBinPadAddedStatic(GstElement* src, GstPad* pad, void* data)
+    {
+        reinterpret_cast<LiveVideoSource*>(data)->onDecodeBinPadAdded(src, pad);
+    }
 
     /* Private methods */
     void onRtspPadAdded(GstElement* src, GstPad* pad);
+    void onDecodeBinPadAdded(GstElement* src, GstPad* pad);
 
     /* Private members */
     std::string rtspUrl;

@@ -201,7 +201,7 @@ void VideoSlot::AttachVideoSource(std::shared_ptr<LiveVideoSource> liveVideoSour
         ChickenCam::Instance->DumpPipelineDebug("rtspadded");
 
         std::thread t([](){
-            std::chrono::milliseconds timespan(5000); // or whatever
+            std::chrono::milliseconds timespan(10000); // or whatever
             std::this_thread::sleep_for(timespan);
             ChickenCam::Instance->DumpPipelineDebug("delayed");
         });

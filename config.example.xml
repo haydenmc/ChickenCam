@@ -1,0 +1,41 @@
+<config
+    frame-rate="30"
+    bit-rate="2000000"
+    h264-profile="4"
+    h264-preset-level="3"
+    h264-i-frame-interval="30"
+    h264-insert-sps-pps="true"
+    h264-max-perf-enabled="true"
+    rtmp-target-uri="rtmp://live-sea.twitch.tv/app/APIKEY">
+    <video-slots>
+        <video-slot
+            id="0"
+            x="480"
+            y="0"
+            width="960"
+            height="720" />
+        <video-slot
+            id="1"
+            x="0"
+            y="0"
+            width="480"
+            height="360" />
+        <video-slot
+            id="2"
+            x="0"
+            y="360"
+            width="480"
+            height="360" />
+    </video-slots>
+    <live-video-sources>
+        <live-video-source
+            slot-id="0"
+            rtsp-uri="rtsp://127.0.0.1:8554/test" />
+        <live-video-source
+            slot-id="1"
+            rtsp-uri="rtsp://127.0.0.1:8555/test" />
+        <live-video-source
+            slot-id="2"
+            rtsp-uri="rtsp://127.0.0.1:8556/test" />
+    </live-video-sources>
+</config>

@@ -26,6 +26,7 @@ private:
     void initVideoSlots();
     void initLiveVideoSources();
     void initGst();
+    bool tryHandleError(GstObject* src);
 
     /* Private members */
     unsigned int frameRate = 30;

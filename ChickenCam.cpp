@@ -70,7 +70,11 @@ void ChickenCam::Run()
                         std::endl;
                     g_clear_error (&err);
                     g_free (debug_info);
-                    terminate = TRUE;
+                    // If we're unable to handle this error, terminate
+                    if (!this->tryHandleError(msg->src))
+                    {
+                        terminate = TRUE;
+                    }
                     gst_debug_bin_to_dot_file(GST_BIN(this->gstPipeline), GST_DEBUG_GRAPH_SHOW_ALL, "error");
                     break;
                 case GST_MESSAGE_EOS:
@@ -261,21 +265,22 @@ void ChickenCam::initGst()
     }
 
     // Configure elements
+    ConfigChickenCam camConfig = this->config->GetChickenCam();
     Logger::LogInfo(this, "Configuring Encoder element...");
     g_object_set(this->gstNvH264Enc,
-        "maxperf-enable", 1,
-        "preset-level", 1,
+        "bitrate", camConfig.bitRate,
+        "profile", camConfig.h264Profile,
+        "preset-level", camConfig.h264PresetLevel,
+        "iframeinterval", camConfig.h264IFrameInterval,
+        "insert-sps-pps", camConfig.h264InsertSpsPps ? 1 : 0,
+        "maxperf-enable", camConfig.h264MaxPerfEnabled ? 1 : 0,
         "num-B-Frames", 0,
         "control-rate", 1,
-        "profile", 2,
-        "iframeinterval", 30,
-        "insert-sps-pps", 1,
-        "bitrate", 2000000,
         NULL);
 
     Logger::LogInfo(this, "Configuring RTMP element...");
     g_object_set(this->gstRtmpSink,
-        "location", this->config->GetChickenCam().rtmpTargetUri.c_str(),
+        "location", camConfig.rtmpTargetUri.c_str(),
         NULL);
 
     // Link up video
@@ -297,5 +302,20 @@ void ChickenCam::initGst()
     }
 
     gst_debug_bin_to_dot_file(GST_BIN(this->gstPipeline), GST_DEBUG_GRAPH_SHOW_ALL, "debug");
+}
+
+bool ChickenCam::tryHandleError(GstObject* src)
+{
+    // Does this error belong to any of our live video sources?
+    for (const std::shared_ptr<LiveVideoSource>& liveVideoSource : this->liveVideoSources)
+    {
+        if (liveVideoSource->TryHandleError(src))
+        {
+            return true;
+        }
+    }
+
+    // Not handled
+    return false;
 }
 #pragma endregion

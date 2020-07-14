@@ -33,6 +33,11 @@ public:
     void DetachVideoSource();
 
 private:
+    /* Private methods */
+    void initLiveVideoSourceConversionBin();
+    void onLiveVideoSourceStarted();
+    void onLiveVideoSourceStopped();
+
     /* Private members */
     // Slot parameters
     unsigned int id;
@@ -47,6 +52,9 @@ private:
 
     // GStreamer
     GstBin* gstBin;
+    GstBin* liveVideoSourceConversionBin;
     GstElement* gstFallbackSrc;
     GstElement* gstInputSelector;
+    GstPad* inputSelectorFallbackSinkPad;
+    GstPad* inputSelectorLiveVideoSinkPad;
 };

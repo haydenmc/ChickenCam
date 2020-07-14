@@ -22,6 +22,7 @@ public:
     Event<>& GetStartedEvent();
     Event<>& GetStoppedEvent();
     void Init();
+    bool TryHandleError(GstObject* src);
 
 private:
     /* Private static methods */
